@@ -1,0 +1,7 @@
+{
+  "name": "JAR",
+  "description": "An OCR-powered receipt splitting application that allows groups to easily split costs from a photo.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
