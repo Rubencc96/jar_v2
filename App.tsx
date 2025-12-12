@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Plus, Trash2, Upload, Camera, Check, ChevronRight, RefreshCw, Users, Receipt, Calculator, DollarSign, Edit2, Settings } from 'lucide-react';
+import { Plus, Trash2, Upload, Camera, Check, ChevronRight, RefreshCw, Users, Receipt, Calculator, DollarSign, Edit2, Settings, Image as ImageIcon } from 'lucide-react';
 import { AppStep, PartyMember, ReceiptItem } from './types';
 import { parseReceiptImage } from './services/ocr';
 import { Button } from './components/Button';
@@ -17,8 +17,13 @@ export default function App() {
   ]);
   const [items, setItems] = useState<ReceiptItem[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [processingStatus, setProcessingStatus] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [currency, setCurrency] = useState('€');
+
+  // Refs for file inputs
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
 
   // --- Handlers: Step 1 (Party) ---
   const handleAddMember = () => {
@@ -50,6 +55,9 @@ export default function App() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // Reset input so same file can be selected again if needed
+    e.target.value = '';
+
     if (!file.type.startsWith('image/')) {
       setError("Please upload a valid image file.");
       return;
@@ -57,11 +65,21 @@ export default function App() {
 
     setIsProcessing(true);
     setError(null);
+    setProcessingStatus("Preparing image...");
 
+    // Small delay to allow UI to update before heavy processing starts
+    setTimeout(() => {
+        processFile(file);
+    }, 100);
+  };
+
+  const processFile = (file: File) => {
     const reader = new FileReader();
     reader.onloadend = async () => {
       try {
         const base64String = reader.result as string;
+        
+        setProcessingStatus("Scanning text (this may take a moment)...");
         const result = await parseReceiptImage(base64String);
         
         const newItems: ReceiptItem[] = result.items.map(item => ({
@@ -72,20 +90,21 @@ export default function App() {
         }));
         
         if (newItems.length === 0) {
-           setError("We couldn't detect any items automatically. You can add them manually in the next step.");
-           // Proceed anyway with empty list
+           setError("We couldn't detect specific items. Please verify the photo is clear and contains prices, or add items manually.");
         }
 
         setItems(newItems);
         setStep(AppStep.Verification);
-      } catch (err) {
-        setError("Failed to read receipt text. Please try a clearer photo.");
+      } catch (err: any) {
+        console.error(err);
+        setError(err.message || "Failed to read receipt. Please try a clearer photo.");
       } finally {
         setIsProcessing(false);
+        setProcessingStatus("");
       }
     };
     reader.readAsDataURL(file);
-  };
+  }
 
   // --- Handlers: Step 3 (Verification) ---
   const handleUpdateItem = (id: string, field: 'name' | 'price', value: string | number) => {
@@ -122,13 +141,6 @@ export default function App() {
       return { ...item, assignedTo: newAssigned };
     }));
   };
-
-  const assignAllTo = (memberId: string) => {
-    setItems(items.map(item => ({
-       ...item,
-       assignedTo: item.assignedTo.includes(memberId) ? item.assignedTo : [...item.assignedTo, memberId]
-    })));
-  }
 
   // --- Handlers: Step 5 (Summary) ---
   const calculateSummary = () => {
@@ -231,39 +243,66 @@ export default function App() {
   const renderStep2 = () => (
     <div className="space-y-8 text-center">
        <div className="text-center">
-        <h2 className="text-2xl font-bold text-slate-900">Upload Receipt</h2>
-        <p className="text-slate-500">Take a photo or upload an image.</p>
+        <h2 className="text-2xl font-bold text-slate-900">Add Receipt</h2>
+        <p className="text-slate-500">Choose how to add your receipt.</p>
       </div>
 
-      <div className="border-2 border-dashed border-indigo-200 rounded-xl p-8 bg-indigo-50/50 hover:bg-indigo-50 transition-colors relative">
-        <input 
-          type="file" 
-          accept="image/*" 
-          capture="environment"
-          onChange={handleFileUpload}
-          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+      {/* Hidden inputs */}
+      <input 
+        type="file" 
+        accept="image/*" 
+        capture="environment"
+        ref={cameraInputRef}
+        onChange={handleFileUpload}
+        className="hidden"
+      />
+      <input 
+        type="file" 
+        accept="image/*" 
+        ref={galleryInputRef}
+        onChange={handleFileUpload}
+        className="hidden"
+      />
+
+      <div className="grid grid-cols-1 gap-4">
+        {/* Camera Button */}
+        <button 
+          onClick={() => cameraInputRef.current?.click()}
           disabled={isProcessing}
-        />
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-sm text-indigo-600">
-            {isProcessing ? <RefreshCw className="animate-spin" size={32}/> : <Camera size={32} />}
+          className="flex flex-col items-center justify-center p-8 bg-indigo-50 border-2 border-dashed border-indigo-200 rounded-2xl hover:bg-indigo-100 transition-all active:scale-95"
+        >
+          <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-sm text-indigo-600 mb-3">
+            <Camera size={32} />
           </div>
-          <div>
-            <p className="font-medium text-indigo-900">
-              {isProcessing ? "Reading receipt..." : "Tap to capture or upload"}
-            </p>
-            {!isProcessing && <p className="text-sm text-indigo-600/70 mt-1">Supports JPG, PNG, WEBP</p>}
+          <span className="font-bold text-indigo-900 text-lg">Take Photo</span>
+          <span className="text-sm text-indigo-600/70">Use Camera</span>
+        </button>
+
+        {/* Upload Button */}
+        <button 
+          onClick={() => galleryInputRef.current?.click()}
+          disabled={isProcessing}
+          className="flex flex-col items-center justify-center p-8 bg-white border-2 border-dashed border-slate-200 rounded-2xl hover:bg-slate-50 transition-all active:scale-95"
+        >
+          <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center shadow-sm text-slate-600 mb-3">
+            <ImageIcon size={32} />
           </div>
-        </div>
+          <span className="font-bold text-slate-900 text-lg">Upload File</span>
+          <span className="text-sm text-slate-500">From Gallery</span>
+        </button>
       </div>
       
       {isProcessing && (
-        <p className="text-sm text-slate-500 animate-pulse">
-          Processing image with OCR... This may take a moment.
-        </p>
+        <div className="mt-6 p-4 bg-indigo-50 rounded-lg animate-pulse flex flex-col items-center">
+          <RefreshCw className="animate-spin text-indigo-600 mb-2" size={24}/>
+          <p className="text-sm font-medium text-indigo-800">
+            {processingStatus || "Processing..."}
+          </p>
+          <p className="text-xs text-indigo-600 mt-1">Resizing and optimizing image...</p>
+        </div>
       )}
 
-       <Button variant="ghost" onClick={() => setStep(AppStep.PartyCreation)}>
+       <Button variant="ghost" onClick={() => setStep(AppStep.PartyCreation)} disabled={isProcessing}>
           Back
        </Button>
     </div>
